@@ -82,19 +82,25 @@ WAIT_CPM2B_PASSWORD = 22
 #-----------------------------
 # (days, label, stars)
 SUBSCRIPTION_PLANS = [
-    (1,  "1 Day",     30),
-    (5,  "5 Days",    150),
-    (7,  "1 Week",    200),
-    (14, "2 Weeks",   250),
-    (30, "1 Month",   300),
-    (60, "2 Months",  350),
+    (1,  "1 Day",     30,  1000),
+    (5,  "5 Days",    150, 2000),
+    (7,  "1 Week",    200, 2000),
+    (14, "2 Weeks",   250, 2000),
+    (30, "1 Month",   300, 2000),
+    (60, "2 Months",  350, 2000),
 ]
 
+def get_plan_details(name):
+    # Normalize input name (e.g. "1_DAY" or "1 DAY") to compare with plan labels
+    norm_name = name.replace("_", " ").upper()
+    for days, label, stars, daily_coins in SUBSCRIPTION_PLANS:
+        if label.upper() == norm_name:
+            return days, daily_coins
+    return None, None
+
 def get_days_from_plan(name):
-    for days, label, _ in SUBSCRIPTION_PLANS:
-        if label == name:
-            return days
-    return None
+    days, _ = get_plan_details(name)
+    return days
 
 #-----------------------------
 # MOD KEYBOARD
@@ -168,13 +174,15 @@ def get_sub_expiry(user_id):
     entry = get_sub_entry(user_id)
     return entry.get("sub_expiry") if entry else None
 
-def set_sub(user_id, days):
+def set_sub(user_id, days, daily_coins=0):
     """Add `days` to the user's current subscription (stacks if already active)."""
     data = load_coins()
     sid = str(user_id)
     if sid not in data:
         data[sid] = {"coins": 0, "unlimited": False, "subscribed": False}
     entry = data[sid]
+    
+    # Update expiry
     expiry = entry.get("sub_expiry")
     try:
         base = datetime.datetime.strptime(expiry, "%Y-%m-%d %H:%M:%S")
@@ -185,6 +193,12 @@ def set_sub(user_id, days):
     new_expiry = base + datetime.timedelta(days=days)
     entry["sub_expiry"] = new_expiry.strftime("%Y-%m-%d %H:%M:%S")
     entry["subscribed"] = True
+    
+    # Update daily allowance and grant initial coins
+    entry["daily_coins"] = daily_coins
+    entry["coins"] = daily_coins
+    entry["last_reset"] = datetime.datetime.now().strftime("%Y-%m-%d")
+    
     save_coins(data)
     return new_expiry
 
@@ -236,14 +250,17 @@ async def show_vip_menu(query, user_id):
     await safe_edit(query, vip_text(user_id), reply_markup=get_vip_keyboard())
 
 async def handle_buy_plan(query, user_id, plan_name):
-    label = plan_name.replace("_", " ")
-    days = get_days_from_plan(label)
+    # plan_name comes from callback e.g. "1_DAY"
+    days = get_days_from_plan(plan_name)
     if days is None:
-        await safe_edit(query, "❓ Unknown plan.")
+        await safe_edit(query, f"❓ Unknown plan: {plan_name}")
         return
+    
+    # Find the matching plan entry for details
+    norm_name = plan_name.replace("_", " ").upper()
     entry = None
     for d, lab, stars in SUBSCRIPTION_PLANS:
-        if lab == label:
+        if lab.upper() == norm_name:
             entry = (d, lab, stars)
             break
     days, label, stars = entry
@@ -427,10 +444,14 @@ def save_coins(data):
         json.dump(data, f, indent=4)
 
 def get_user_coins(user_id):
+    if is_admin(user_id):
+        return 99999
     data = load_coins()
     return data.get(str(user_id), {"coins": 0, "unlimited": False}).get("coins", 0)
 
 def is_unlimited(user_id):
+    if is_admin(user_id):
+        return True
     data = load_coins()
     return data.get(str(user_id), {"coins": 0, "unlimited": False}).get("unlimited", False)
 
@@ -1364,19 +1385,21 @@ async def subgrant_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         target_id = int(context.args[0])
         plan_name = " ".join(context.args[1:]).replace("_", " ").strip()
-        days = get_days_from_plan(plan_name)
+        days, daily_coins = get_plan_details(plan_name)
         if days is None:
-            plans = ", ".join(l for _, l, _ in SUBSCRIPTION_PLANS)
+            plans = ", ".join(l for _, l, stars, dc in SUBSCRIPTION_PLANS)
             await update.message.reply_text(f"❌ Unknown plan. Available: {plans}")
             return
-        new_expiry = set_sub(target_id, days)
+        new_expiry = set_sub(target_id, days, daily_coins)
         await update.message.reply_text(
             f"✅ Subscription granted/extended for user {target_id}\n"
-            f"⭐ Plan: {plan_name} (+{days} days)\n⏳ New expiry: {new_expiry}"
+            f"⭐ Plan: {plan_name} (+{days} days)\n"
+            f"💰 Daily Allowance: {daily_coins} coins\n"
+            f"⏳ New expiry: {new_expiry}"
         )
         fancy_log(user_id, "ADMIN", "SUBSCRIPTION GRANTED", extra=f"TARGET: {target_id} | PLAN: {plan_name} | EXPIRY: {new_expiry}")
     except Exception:
-        plans = ", ".join(l for _, l, _ in SUBSCRIPTION_PLANS)
+        plans = ", ".join(l for _, l, stars, dc in SUBSCRIPTION_PLANS)
         await update.message.reply_text(f"Usage: /subgrant <user_id> <plan>\nPlans: {plans}")
 
 async def check_subs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1578,14 +1601,14 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("❌ Unsupported currency. Telegram Stars only.")
         return
     if not payload.startswith("sub_"):
-        await update.message.reply_text("⚠️ Payment received but no matching subscription plan found. Contact @AshwinnCpm2.")
+        await update.message.reply_text("⚠️ Payment received but no matching subscription plan found. Contact @Maarkryan.")
         return
     plan_name = payload[4:].replace("_", " ")
-    days = get_days_from_plan(plan_name)
+    days, daily_coins = get_plan_details(plan_name)
     if days is None:
-        await update.message.reply_text(f"⚠️ Unknown plan: {plan_name}. Contact @AshwinnCpm2.")
+        await update.message.reply_text(f"⚠️ Unknown plan: {plan_name}. Contact @Maarkryan.")
         return
-    new_expiry = set_sub(user_id, days)
+    new_expiry = set_sub(user_id, days, daily_coins)
     if user_id in sessions:
         sessions[user_id].pop("pending_mod", None)
     fancy_log(user_id, username, "STARS PAYMENT RECEIVED", extra=f"PLAN: {plan_name} | STARS: {total} | EXPIRY: {new_expiry}")
@@ -1604,15 +1627,38 @@ async def successful_payment_handler(update: Update, context: ContextTypes.DEFAU
 RENEWED_BEFORE = {}  # in-memory: user_id -> reminder timestamp, avoids spamming
 
 async def renewal_job(context: ContextTypes.DEFAULT_TYPE):
-    """Remind users when their subscription expires soon or has just expired."""
+    """Remind users of expiry and reset daily VIP coins."""
     try:
         data = load_coins()
     except Exception:
         return
     now = datetime.datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    changed = False
+    
     for sid, entry in data.items():
         if not isinstance(entry, dict):
             continue
+        try:
+            uid = int(sid)
+        except ValueError:
+            continue
+            
+        # 1. Daily Coin Reset Logic
+        if entry.get("subscribed") and entry.get("daily_coins", 0) > 0:
+            last_reset = entry.get("last_reset", "")
+            if last_reset != today_str:
+                entry["coins"] = entry["daily_coins"]
+                entry["last_reset"] = today_str
+                changed = True
+                try:
+                    await context.bot.send_message(
+                        uid,
+                        f"🔄 Daily Reset: You have received your {entry['daily_coins']} VIP coins for today!"
+                    )
+                except: pass
+
+        # 2. Expiry Reminder Logic
         expiry_str = entry.get("sub_expiry")
         if not expiry_str:
             continue
@@ -1620,15 +1666,13 @@ async def renewal_job(context: ContextTypes.DEFAULT_TYPE):
             expiry = datetime.datetime.strptime(expiry_str, "%Y-%m-%d %H:%M:%S")
         except Exception:
             continue
-        if user_id_in_admin(int(sid)):
+        if user_id_in_admin(uid):
             continue
-        try:
-            uid = int(sid)
-        except ValueError:
-            continue
+            
         diff = expiry - now
         hours = diff.total_seconds() / 3600
         last = RENEWED_BEFORE.get(uid)
+        
         if 0 < hours <= 12 and (not last or now - last > datetime.timedelta(hours=12)):
             RENEWED_BEFORE[uid] = now
             try:
@@ -1641,8 +1685,11 @@ async def renewal_job(context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=InlineKeyboardMarkup([kb])
                 )
             except Exception:
-                pass  # bot may be blocked by user
-        elif hours <= 0 and (not last or now - last > datetime.timedelta(hours=24)):
+                pass
+        elif hours <= 0 and entry.get("subscribed"):
+            entry["subscribed"] = False
+            entry["daily_coins"] = 0
+            changed = True
             RENEWED_BEFORE[uid] = now
             try:
                 kb = [InlineKeyboardButton("🔥 Renew Subscription", callback_data="VIP")]
@@ -1654,6 +1701,9 @@ async def renewal_job(context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
+                
+    if changed:
+        save_coins(data)
 
 def user_id_in_admin(user_id):
     return user_id in ADMIN_ID
