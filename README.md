@@ -1,14 +1,14 @@
 # ES3 Session Bot — Render Deployment
 
-Telegram bot na nagco-convert ng CPM1/CPM2 ES3 files. Deployed sa Render bilang **Background Worker**.
+Telegram bot na nagco-convert ng CPM1/CPM2 ES3 files at may VIP Stars subscription system. Deployed sa Render bilang **Web Service** (may built-in health-check server sa port 10000, patuloy na tumatakbo ang polling sa background).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `bot1.py` | Main bot code (token is read from `BOT_TOKEN` env var) |
+| `bot1.py` | Main bot code (token is read from `BOT_TOKEN` env var; includes health-check server + VIP subscription system) |
 | `requirements.txt` | Python dependencies |
-| `Dockerfile` | Render Docker build definition |
+| `Dockerfile` | Render Docker build definition (exposes port 10000) |
 | `render.yaml` | Render Blueprint (optional one-click setup) |
 
 ## Local Test
@@ -16,18 +16,22 @@ Telegram bot na nagco-convert ng CPM1/CPM2 ES3 files. Deployed sa Render bilang 
 ```bash
 pip install -r requirements.txt
 BOT_TOKEN="your-token-here" python3 bot1.py
+# Health check: curl http://localhost:10000/  -> should return "OK"
 ```
 
 ## Render Deploy (GitHub method)
 
 1. Push files to GitHub
-2. New Web Service o **Background Worker** sa render.com
-3. Connect GitHub repo
-4. Environment: Docker o Python
-5. Add env var `BOT_TOKEN`
-6. Deploy
+2. New **Web Service** sa render.com
+3. Connect GitHub repo, branch: `main`
+4. Language: **Docker**
+5. Environment Variables: `BOT_TOKEN` = token mula sa BotFather
+6. Health Check Path (Advanced): `/` (optional — may built-in health server na)
+7. Plan: Free
+8. Deploy Web Service
 
 ## Important
 
-- Use **Background Worker** (not Web Service) — polling bots walang HTTP endpoint na kailangan i-keep-alive.
-- Libreng plan: sasapin ang bot pag nag-idle siya? Hindi — workers walang spin-down sa free plan, pero limited ang monthly hours. Pwedeng mag-upgrade kung 24/7 reliable kailangan.
+- Use **Web Service** — ang bot ay may built-in na health-check server (port 10000) na nagsisigurong hindi siya pumapatay ng Render.
+- Ang Telegram polling ay patuloy na tumatakbo sa background habang online ang health server.
+- Ang `BOT_TOKEN` ay HUWAG isulat sa code — i-set lang sa Render Environment Variables.
