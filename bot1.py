@@ -188,6 +188,15 @@ def set_sub(user_id, days):
     save_coins(data)
     return new_expiry
 
+def is_admin(user_id):
+    return user_id in ADMIN_ID
+
+def status_label(user_id):
+    """Return the display status label — admins always show ADMIN."""
+    if is_admin(user_id):
+        return "👑 ADMIN 👑"
+    return "Premium ⭐" if is_sub_active(user_id) else "Free"
+
 def vip_access_message(user_id):
     """Message shown when a non-VIP user tries a VIP mod."""
     if is_sub_active(user_id):
@@ -205,10 +214,14 @@ def vip_access_message(user_id):
 #-----------------------------
 
 def vip_text(user_id):
-    subscribed = is_sub_active(user_id)
-    status = "Premium ⭐"
+    status = status_label(user_id)
     expiry = get_sub_expiry(user_id)
-    status_line = f"💎 Status: {status}\n⏳ Expiry: {expiry}\n" if expiry else f"💎 Status: Free — renew below 👇\n"
+    if is_admin(user_id):
+        status_line = f"👑 Status: {status} — full access\n"
+    elif expiry:
+        status_line = f"💎 Status: {status}\n⏳ Expiry: {expiry}\n"
+    else:
+        status_line = f"💎 Status: Free — renew below 👇\n"
     lines = [
         "🔥 VIP MODS & SUBSCRIPTION",
         "",
@@ -249,18 +262,22 @@ async def handle_buy_plan(query, user_id, plan_name):
 async def show_profile(query, user_id):
     coins = get_user_coins(user_id)
     unlimited = is_unlimited(user_id)
-    subscribed = is_sub_active(user_id)
-    status = "Premium ⭐"
-    expiry_line = get_sub_expiry(user_id) or "—"
-    if not subscribed:
-        expiry_line = "None (Free Plan)"
+    status = status_label(user_id)
+    if is_admin(user_id):
+        expiry_line = "N/A (Owner — unlimited)"
+        vip_line = "\n👑 As owner you have FULL access to everything."
+    else:
+        expiry_line = get_sub_expiry(user_id) or "—"
+        if not is_sub_active(user_id):
+            expiry_line = "None (Free Plan)"
+        vip_line = "\n\nUpgrade to VIP for all mods 👇"
     text = (
         f"👤 Your Profile\n\n"
         f"🆔 ID: `{user_id}`\n"
         f"💎 Status: {status}\n"
         f"⏳ Expiry: {expiry_line}\n"
-        f"💰 Coins: {coins}{' (Unlimited)' if unlimited else ''}\n\n"
-        f"Upgrade to VIP for all mods 👇"
+        f"💰 Coins: {coins}{' (Unlimited)' if unlimited else ''}"
+        f"{vip_line}"
     )
     kb = [
         [InlineKeyboardButton("🔥 See Subscription Plans", callback_data="VIP")],
@@ -865,8 +882,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fancy_log(user_id, username, "Start Command (RESET)")
     coins = get_user_coins(user_id)
     unlimited = is_unlimited(user_id)
-    subscribed = is_sub_active(user_id)
-    sub_label = "Premium ⭐" if subscribed else "Free"
+    sub_label = status_label(user_id)
     caption = (
         f"👋 Welcome to ES3 Session Bot!\n\n"
         f"🆔 ID: `{user_id}`\n"
@@ -1064,16 +1080,16 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Handle each callback data explicitly
     if choice == "CPM1":
-        await safe_edit(query, "✅ CPM1 selected! Upload your ES3 file.")
+        await safe_edit(query, "✅ CPM1 selected! Upload your ES3 file.", reply_markup=get_back_keyboard())
         return WAIT_FILE
     elif choice == "CPM2":
-        await safe_edit(query, "✅ CPM2 selected! Upload your ES3 file.")
+        await safe_edit(query, "✅ CPM2 selected! Upload your ES3 file.", reply_markup=get_back_keyboard())
         return WAIT_FILE
     elif choice == "C2C":
-        await safe_edit(query, "✅ CPM1→CPM2 conversion selected! Upload CPM1 ES3 file.")
+        await safe_edit(query, "✅ CPM1→CPM2 conversion selected! Upload CPM1 ES3 file.", reply_markup=get_back_keyboard())
         return WAIT_CPM1_FILE
     elif choice == "C2C2":
-        await safe_edit(query, "✅ CPM2→CPM2 conversion selected! Upload source CPM2 ES3 file.")
+        await safe_edit(query, "✅ CPM2→CPM2 conversion selected! Upload source CPM2 ES3 file.", reply_markup=get_back_keyboard())
         return WAIT_CPM2A_FILE
     elif choice == "ACCOUNT":
         kb = [
@@ -1100,8 +1116,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, text, parse_mode="Markdown", reply_markup=get_back_keyboard())
         return WAIT_MENU
     elif choice == "BACK_MAIN":
-        subscribed = is_sub_active(user_id)
-        sub_label = "Premium ⭐" if subscribed else "Free"
+        sub_label = status_label(user_id)
         coins = get_user_coins(user_id)
         text = (
             f"👋 ES3 Session Bot\n\n"
@@ -1113,15 +1128,15 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, text, parse_mode="Markdown", reply_markup=get_main_keyboard(user_id))
         return WAIT_MENU
     elif choice == "UPLOAD_ZIP":
-        await safe_edit(query, "📦 Send your ES3 folder as a .zip file")
+        await safe_edit(query, "📦 Send your ES3 folder as a .zip file", reply_markup=get_back_keyboard())
         return WAIT_ZIP
     elif choice == "UNLOCK_GIT":
         if user_id not in saved_cpm2_accounts:
             sessions[user_id]["pending_mod"] = choice
-            await safe_edit(query, "🔐 Login to CPM2 first.\n\n📧 Send your CPM2 email:")
+            await safe_edit(query, "🔐 Login to CPM2 first.\n\n📧 Send your CPM2 email:", reply_markup=get_back_keyboard())
             return WAIT_LOGIN_EMAIL
         if not sessions[user_id].get("es3_folder"):
-            await safe_edit(query, "❌ No ZIP loaded. Upload ES3 folder as .zip first.")
+            await safe_edit(query, "❌ No ZIP loaded. Upload ES3 folder as .zip first.", reply_markup=get_back_keyboard())
             return WAIT_MENU
         if not is_unlimited(user_id) and user_id not in ADMIN_ID:
             if not is_sub_active(user_id):
@@ -1129,7 +1144,7 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_edit(query, f"❌ VIP Subscription Required\n\n{note}\n\nContact {OWNER_USERNAME}.", reply_markup=kb)
                 return WAIT_MENU
             if get_user_coins(user_id) < 80:
-                await safe_edit(query, f"❌ Need 80 coins.\nYou have {get_user_coins(user_id)}.\nContact {OWNER_USERNAME}.")
+                await safe_edit(query, f"❌ Need 80 coins.\nYou have {get_user_coins(user_id)}.\nContact {OWNER_USERNAME}.", reply_markup=get_back_keyboard())
                 return WAIT_MENU
             deduct_coins(user_id, 80)
             fancy_log(user_id, username, f"80 COINS DEDUCTED FOR {choice}")
@@ -1139,10 +1154,10 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif choice == "LOCAL_MODS":
         if user_id not in saved_cpm2_accounts:
             sessions[user_id]["pending_mod"] = choice
-            await safe_edit(query, "🔐 Login to CPM2 first.\n\n📧 Send your CPM2 email:")
+            await safe_edit(query, "🔐 Login to CPM2 first.\n\n📧 Send your CPM2 email:", reply_markup=get_back_keyboard())
             return WAIT_LOGIN_EMAIL
         if not sessions[user_id].get("es3_folder"):
-            await safe_edit(query, "❌ No ZIP loaded. Upload ES3 folder as .zip first.")
+            await safe_edit(query, "❌ No ZIP loaded. Upload ES3 folder as .zip first.", reply_markup=get_back_keyboard())
             return WAIT_MENU
         if not is_unlimited(user_id) and user_id not in ADMIN_ID:
             if not is_sub_active(user_id):
@@ -1169,19 +1184,19 @@ async def menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🗑 Session cleared.\n\nSend /start to begin again.")
         return WAIT_MENU
     elif choice == "LOGINCPM2":
-        await safe_edit(query, "📧 Send your CPM2 email")
+        await safe_edit(query, "📧 Send your CPM2 email", reply_markup=get_back_keyboard())
         return WAIT_LOGIN_EMAIL
     elif choice == "CHANGEEMAIL":
         if user_id not in saved_cpm2_accounts:
-            await safe_edit(query, "❌ Login CPM2 first")
+            await safe_edit(query, "❌ Login CPM2 first", reply_markup=get_back_keyboard())
             return WAIT_MENU
-        await safe_edit(query, "📧 Send new email")
+        await safe_edit(query, "📧 Send new email", reply_markup=get_back_keyboard())
         return WAIT_NEW_EMAIL
     elif choice == "CHANGEPASS":
         if user_id not in saved_cpm2_accounts:
-            await safe_edit(query, "❌ Login CPM2 first")
+            await safe_edit(query, "❌ Login CPM2 first", reply_markup=get_back_keyboard())
             return WAIT_MENU
-        await safe_edit(query, "🔑 Send new password")
+        await safe_edit(query, "🔑 Send new password", reply_markup=get_back_keyboard())
         return WAIT_NEW_PASSWORD
     elif choice == "VIP":
         await show_vip_menu(query, user_id)
