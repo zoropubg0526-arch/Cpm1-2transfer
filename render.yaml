@@ -1,11 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: es3-session-bot
     runtime: docker
     plan: free
-    buildCommand: docker build -t es3-session-bot .
-    startCommand: docker run es3-session-bot
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /
     envVars:
       - key: BOT_TOKEN
         sync: false
