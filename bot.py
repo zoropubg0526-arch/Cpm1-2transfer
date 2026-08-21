@@ -11,6 +11,8 @@ from io import BytesIO
 from collections import defaultdict
 import sys
 import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -1702,6 +1704,20 @@ def main():
     # Daily renewal reminder job (runs every 12 hours)
     app.add_handler(CommandHandler("checksubs", check_subs_command))
     app.job_queue.run_repeating(renewal_job, interval=12 * 3600, first=10)
+
+    # Health-check server for Render Web Service (keeps the instance awake + passes health checks)
+    PORT = int(os.environ.get("PORT", "10000"))
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, format, *args):
+            pass  # silence health-check spam
+    health_server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    threading.Thread(target=health_server.serve_forever, daemon=True).start()
+    print(f"🩺 Health check server running on :{PORT}")
 
     print("🤖 ES3 Session Bot running with CPM1, CPM2, CPM1→CPM2, CPM2→CPM2, and VIP Stars subscription support...")
     app.run_polling()
