@@ -40,7 +40,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN environment variable is not set")
 ADMIN_ID = [6531314640]
-OWNER_USERNAME = "@AshwinnCpm2"
+OWNER_USERNAME = "@Maarkryan"
 
 COIN_FILE = "coins.json"
 USERS_FILE = "users.txt"
