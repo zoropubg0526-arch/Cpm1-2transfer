@@ -75,7 +75,9 @@ Ang **ADMIN_ID** ay ikaw lang: `6531314640`. Bilang owner, walang coins o subscr
 | `/subscribe <user_id> <True/False>` | Lumang legacy toggle (nandoon pa para sa compatibility) |
 | `/addcoins`, `/setcoins`, `/unlimited`, `/balance`, `/stopbot` | Parehong lumang admin commands, gumagana pa rin |
 
-## Paano I-Deploy Ulit
+## Paano I-Deploy (Render Web Service)
+
+Ang bot ngayon ay **naka-setup bilang Render Web Service** — may built-in na health-check server sa **port 10000** na nagpapadala ng "OK" para sa Render health checks, habang patuloy na tumatakbo ang Telegram polling sa background.
 
 Iba-ibaba lang ang bagong `bot1.py` at `requirements.txt` sa GitHub repo mo (paliitan ang lumang files), at auto-deploy na ang Render dahil sa webhook. **Hindi mo kailangang baguhin ang BOT_TOKEN env var o ang Render settings.**
 
