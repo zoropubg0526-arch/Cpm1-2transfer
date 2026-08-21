@@ -11,4 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Render Web Service: expose health-check port 10000
+EXPOSE 10000
+ENV PORT=10000
+
 CMD ["python3", "bot1.py"]
